@@ -1,24 +1,5 @@
-/*
- *    GeoTools - The Open Source Java GIS Toolkit
- *    http://geotools.org
- *
- *    (C) 2002-2008, Open Source Geospatial Foundation (OSGeo)
- *
- *    This library is free software; you can redistribute it and/or
- *    modify it under the terms of the GNU Lesser General Public
- *    License as published by the Free Software Foundation;
- *    version 2.1 of the License.
- *
- *    This library is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *    Lesser General Public License for more details.
- */
 package org.geotools.data.shapefile.shp;
-
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -26,6 +7,7 @@ import java.nio.channels.Channel;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.channels.ReadableByteChannel;
+import java.sql.Struct;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.geotools.data.DataSourceException;
@@ -49,24 +31,10 @@ import org.locationtech.jts.geom.MultiPoint;
 import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
+import java.io.InputStream;
+import sun.misc.IOUtils;
 
-/**
- * The general use of this class is: <CODE><PRE>
- *
- * FileChannel in = new FileInputStream(&quot;thefile.dbf&quot;).getChannel();
- * ShapefileReader r = new ShapefileReader( in ) while (r.hasNext()) { Geometry
- * shape = (Geometry) r.nextRecord().shape() // do stuff } r.close();
- *
- * </PRE></CODE> You don't have to immediately ask for the shape from the record. The record will
- * contain the bounds of the shape and will only read the shape when the shape() method is called.
- * This ShapefileReader.Record is the same object every time, so if you need data from the Record,
- * be sure to copy it.
- *
- * @author jamesm
- * @author aaime
- * @author Ian Schneider
- */
-public class ShapefileReader implements FileReader, Closeable {
+public class ShapefileInputStreamReader implements FileReader, Closeable {
     private static final Logger LOGGER = Logging.getLogger(ShapefileReader.class);
 
     /**
@@ -210,7 +178,7 @@ public class ShapefileReader implements FileReader, Closeable {
 
     private ByteBuffer headerTransfer;
 
-    private final Record record = new Record();
+    private final ShapefileInputStreamReader.Record record = new ShapefileInputStreamReader.Record();
 
     private final boolean randomAccessEnabled;
 
@@ -237,7 +205,7 @@ public class ShapefileReader implements FileReader, Closeable {
      * @throws IOException If problems arise.
      * @throws ShapefileException If for some reason the file contains invalid records.
      */
-    public ShapefileReader(
+    public ShapefileInputStreamReader(
             ShpFiles shapefileFiles, boolean strict, boolean useMemoryMapped, GeometryFactory gf)
             throws IOException, ShapefileException {
         this(shapefileFiles, strict, useMemoryMapped, gf, false);
@@ -256,7 +224,7 @@ public class ShapefileReader implements FileReader, Closeable {
      * @throws IOException If problems arise.
      * @throws ShapefileException If for some reason the file contains invalid records.
      */
-    public ShapefileReader(
+    public ShapefileInputStreamReader(
             ShpFiles shapefileFiles,
             boolean strict,
             boolean useMemoryMapped,
@@ -280,6 +248,19 @@ public class ShapefileReader implements FileReader, Closeable {
             }
         }
         init(strict, gf);
+    }
+
+    public ShapefileInputStreamReader(GeometryFactory gf, InputStream shp, InputStream shx ) throws IOException {
+        this.randomAccessEnabled = true;
+        this.useMemoryMappedBuffer = true;
+        if(shx == null){
+            currentShape = UNKNOWN;
+        } else {
+            this.shxReader = new IndexFile(shx);
+        }
+
+        this.initInputStream(gf, shp);
+
     }
 
     /**
@@ -362,6 +343,29 @@ public class ShapefileReader implements FileReader, Closeable {
         record.end = this.toFileOffset(buffer.position());
     }
 
+    private void  initInputStream(GeometryFactory gf, InputStream shp) throws IOException {
+        this.geometryFactory = gf;
+
+        byte[] byteArr = new byte[shp.available()];
+        shp.read(byteArr);
+        this.buffer = ByteBuffer.wrap(byteArr);
+        ((Buffer) buffer).position(0);
+        this.currentOffset = 0;
+        header = new ShapefileHeader();
+        header.read(buffer, true);
+        fileShapeType = header.getShapeType();
+        handler = fileShapeType.getShapeHandler(gf);
+        if (handler == null) {
+            throw new IOException("Unsuported shape type:" + fileShapeType);
+        }
+
+        headerTransfer = ByteBuffer.allocate(8);
+        headerTransfer.order(ByteOrder.BIG_ENDIAN);
+
+        // make sure the record end is set now...
+        record.end = this.toFileOffset(buffer.position());
+    }
+
     /**
      * Get the header. Its parsed in the constructor.
      *
@@ -423,6 +427,7 @@ public class ShapefileReader implements FileReader, Closeable {
     private boolean hasNext(boolean checkRecno) throws IOException {
         // don't read past the end of the file (provided currentShape accurately
         // represents the current position)
+        int i =shxReader.getRecordCount();
         if (currentShape > UNKNOWN && currentShape > shxReader.getRecordCount() - 1) return false;
 
         // ensure the proper position, regardless of read or handler behavior
@@ -538,7 +543,7 @@ public class ShapefileReader implements FileReader, Closeable {
      *
      * @return The record instance associated with this reader.
      */
-    public Record nextRecord() throws IOException {
+    public ShapefileInputStreamReader.Record nextRecord() throws IOException {
 
         // need to update position
         positionBufferForOffset(buffer, getNextOffset());
@@ -567,15 +572,15 @@ public class ShapefileReader implements FileReader, Closeable {
                 fill(buffer, channel);
                 ((Buffer) buffer).position(0);
             } else
-            // remaining is less than record length
-            // compact the remaining data and read again,
-            // allowing enough room for one more record header
-            if (buffer.remaining() < recordLength + 8) {
-                this.currentOffset += buffer.position();
-                buffer.compact();
-                fill(buffer, channel);
-                ((Buffer) buffer).position(0);
-            }
+                // remaining is less than record length
+                // compact the remaining data and read again,
+                // allowing enough room for one more record header
+                if (buffer.remaining() < recordLength + 8) {
+                    this.currentOffset += buffer.position();
+                    buffer.compact();
+                    fill(buffer, channel);
+                    ((Buffer) buffer).position(0);
+                }
         }
 
         // shape record is all little endian
@@ -684,7 +689,7 @@ public class ShapefileReader implements FileReader, Closeable {
      * @throws IOException thrown in a read error occurs
      * @throws UnsupportedOperationException thrown if not a random access file
      */
-    public Record recordAt(int offset) throws IOException, UnsupportedOperationException {
+    public ShapefileInputStreamReader.Record recordAt(int offset) throws IOException, UnsupportedOperationException {
         if (randomAccessEnabled) {
             this.goTo(offset);
             return nextRecord();
@@ -755,4 +760,5 @@ public class ShapefileReader implements FileReader, Closeable {
     public void setFlatGeometry(boolean flatGeometry) {
         this.flatGeometry = flatGeometry;
     }
+
 }

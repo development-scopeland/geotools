@@ -17,6 +17,7 @@
 package org.geotools.data.shapefile.shp;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -56,6 +57,7 @@ public class IndexFile implements FileReader, AutoCloseable {
     private int recLen;
     private ShapefileHeader header = null;
     private int[] content;
+    private  boolean isInputStream = false;
     private StreamLogging streamLogger = new StreamLogging("IndexFile");
 
     private volatile boolean closed = false;
@@ -102,6 +104,17 @@ public class IndexFile implements FileReader, AutoCloseable {
             }
             throw (IOException) new IOException(e.getLocalizedMessage()).initCause(e);
         }
+    }
+
+    public IndexFile(InputStream shx) throws IOException {
+        this.isInputStream = true;
+        this.useMemoryMappedBuffer = true;
+        byte[] byteArr = new byte[shx.available()];
+        shx.read(byteArr);
+        this.buf = ByteBuffer.wrap(byteArr);
+        this.channelOffset = 0;
+        header = new ShapefileHeader();
+        header.read(buf, true);
     }
 
     /**
@@ -215,6 +228,12 @@ public class IndexFile implements FileReader, AutoCloseable {
         int ret = -1;
 
         if (this.channel != null) {
+            if (this.lastIndex != index) {
+                this.readRecord(index);
+            }
+
+            ret = this.recOffset;
+        }else if(this.isInputStream){
             if (this.lastIndex != index) {
                 this.readRecord(index);
             }
