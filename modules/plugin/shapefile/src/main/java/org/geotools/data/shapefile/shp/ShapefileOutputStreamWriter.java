@@ -16,19 +16,19 @@ import org.locationtech.jts.geom.GeometryFactory;
  * ShapefileWriter allows for the storage of geometries in esris shp format. During writing, an
  * index will also be created. To create a ShapefileWriter, do something like<br>
  * <code>
- *   GeometryCollection geoms;
- *   File shp = new File("myshape.shp");
- *   File shx = new File("myshape.shx");
- *   ShapefileWriter writer = new ShapefileWriter(
- *     shp.getChannel(),shx.getChannel()
- *   );
- *   writer.write(geoms,ShapeType.ARC);
+ * GeometryCollection geoms;
+ * File shp = new File("myshape.shp");
+ * File shx = new File("myshape.shx");
+ * ShapefileWriter writer = new ShapefileWriter(
+ * shp.getChannel(),shx.getChannel()
+ * );
+ * writer.write(geoms,ShapeType.ARC);
  * </code> This example assumes that each shape in the collection is a LineString.
  *
- * @see org.geotools.data.shapefile.ShapefileDataStore
  * @author jamesm
  * @author aaime
  * @author Ian Schneider
+ * @see org.geotools.data.shapefile.ShapefileDataStore
  */
 public class ShapefileOutputStreamWriter implements Closeable {
     FileChannel shpChannel;
@@ -42,22 +42,23 @@ public class ShapefileOutputStreamWriter implements Closeable {
     int offset;
     int lp;
     int cnt;
-    private  boolean isOutputStream = false;
+    private boolean isOutputStream = false;
     private StreamLogging shpLogger = new StreamLogging("SHP Channel in ShapefileWriter");
     private StreamLogging shxLogger = new StreamLogging("SHX Channel in ShapefileWriter");
     private GeometryFactory gf = new GeometryFactory();
 
     /** Creates a new instance of ShapeFileWriter */
-    public ShapefileOutputStreamWriter(FileChannel shpChannel, FileChannel shxChannel) throws IOException {
+    public ShapefileOutputStreamWriter(FileChannel shpChannel, FileChannel shxChannel)
+            throws IOException {
         this.shpChannel = shpChannel;
         this.shxChannel = shxChannel;
         shpLogger.open();
         shxLogger.open();
     }
 
-    public ShapefileOutputStreamWriter(){ this.isOutputStream = true;};
-
-
+    public ShapefileOutputStreamWriter() {
+        this.isOutputStream = true;
+    };
 
     // private void allocateBuffers(int geomCnt, int fileLength) throws
     // IOException {
@@ -91,9 +92,12 @@ public class ShapefileOutputStreamWriter implements Closeable {
     private void drain() throws IOException {
         ((Buffer) shapeBuffer).flip();
         indexBuffer.flip();
-        if(! isOutputStream){
+        if (!isOutputStream) {
             while (shapeBuffer.remaining() > 0) shpChannel.write(shapeBuffer);
             while (indexBuffer.remaining() > 0) shxChannel.write(indexBuffer);
+        } else {
+            while (shapeBuffer.remaining() > 0) shpOutputStream.write(shapeBuffer.get());
+            while (indexBuffer.remaining() > 0) shxOutputStream.write(indexBuffer.get());
         }
         shapeBuffer.flip().limit(shapeBuffer.capacity());
         indexBuffer.flip().limit(indexBuffer.capacity());
@@ -161,14 +165,14 @@ public class ShapefileOutputStreamWriter implements Closeable {
         this.type = type;
         cnt = 0;
 
-
-        if(! this.isOutputStream){
-        shpChannel.position(0);
-        shxChannel.position(0);
-
+        if (!this.isOutputStream) {
+            shpChannel.position(0);
+            shxChannel.position(0);
+        } else {
+            shxOutputStream.reset();
+            shpOutputStream.reset();
         }
         drain();
-
     }
 
     /**
@@ -201,8 +205,6 @@ public class ShapefileOutputStreamWriter implements Closeable {
         indexBuffer.putInt(offset);
         indexBuffer.putInt(length);
         offset += length + 4;
-        this.shxOutputStream.write(indexBuffer.get());
-        this.shpOutputStream.write(shapeBuffer.get());
         drain();
 
         assert (shapeBuffer.position() == 0);
@@ -301,6 +303,6 @@ public class ShapefileOutputStreamWriter implements Closeable {
 
             writeGeometry(g);
         }
-        return new ByteArrayOutputStream[]{ this.shpOutputStream, this.shxOutputStream};
+        return new ByteArrayOutputStream[] {this.shpOutputStream, this.shxOutputStream};
     }
 }
