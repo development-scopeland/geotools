@@ -1,11 +1,5 @@
 package org.geotools.data.shapefile.dbf;
 
-import org.geotools.data.shapefile.files.FileReader;
-import org.geotools.data.shapefile.files.ShpFileType;
-import org.geotools.data.shapefile.files.ShpFiles;
-import org.geotools.data.shapefile.files.StreamLogging;
-import org.geotools.util.NIOUtilities;
-
 import java.io.*;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
@@ -17,6 +11,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.Calendar;
 import java.util.Locale;
 import java.util.TimeZone;
+import org.geotools.data.shapefile.files.FileReader;
+import org.geotools.data.shapefile.files.ShpFileType;
+import org.geotools.data.shapefile.files.ShpFiles;
+import org.geotools.data.shapefile.files.StreamLogging;
+import org.geotools.util.NIOUtilities;
 
 public class DbaseFileInputStreamReader implements FileReader, Closeable {
 
@@ -195,7 +194,8 @@ public class DbaseFileInputStreamReader implements FileReader, Closeable {
         row = new Row();
     }
 
-    private void  initInputStream(InputStream dbf, final Charset charset, final TimeZone timeZone) throws IOException {
+    private void initInputStream(InputStream dbf, final Charset charset, final TimeZone timeZone)
+            throws IOException {
         this.stringCharset = charset == null ? Charset.defaultCharset() : charset;
         TimeZone calTimeZone = timeZone == null ? TimeZone.getDefault() : timeZone;
         this.calendar = Calendar.getInstance(calTimeZone, Locale.US);
@@ -225,7 +225,6 @@ public class DbaseFileInputStreamReader implements FileReader, Closeable {
         oneBytePerChar = "ISO-8859-1".equals(cname) || "US-ASCII".equals(cname);
 
         row = new Row();
-
     }
 
     protected int fill(final ByteBuffer buffer, final ReadableByteChannel channel)
@@ -260,7 +259,10 @@ public class DbaseFileInputStreamReader implements FileReader, Closeable {
 
                 buffer =
                         ((FileChannel) channel)
-                                .map(FileChannel.MapMode.READ_ONLY, buffer.position(), Integer.MAX_VALUE);
+                                .map(
+                                        FileChannel.MapMode.READ_ONLY,
+                                        buffer.position(),
+                                        Integer.MAX_VALUE);
             }
         } else if (buffer.remaining() < header.getRecordLength()) {
             this.currentOffset += buffer.position();
@@ -449,7 +451,7 @@ public class DbaseFileInputStreamReader implements FileReader, Closeable {
         Object object = null;
         if (fieldLen > 0) {
             switch (type) {
-                // (L)logical (T,t,F,f,Y,y,N,n)
+                    // (L)logical (T,t,F,f,Y,y,N,n)
                 case 'l':
                 case 'L':
                     final char c = (char) bytes[fieldOffset];
@@ -472,7 +474,7 @@ public class DbaseFileInputStreamReader implements FileReader, Closeable {
                             object = null;
                     }
                     break;
-                // (C)character (String)
+                    // (C)character (String)
                 case 'c':
                 case 'C':
                     // if the string begins with a null terminator, the value is null
@@ -487,7 +489,7 @@ public class DbaseFileInputStreamReader implements FileReader, Closeable {
                         }
                     }
                     break;
-                // (D)date (Date)
+                    // (D)date (Date)
                 case 'd':
                 case 'D':
                     // If the first 8 characters are '0', this is a null date
@@ -512,18 +514,22 @@ public class DbaseFileInputStreamReader implements FileReader, Closeable {
                         }
                     }
                     break;
-                // (@) Timestamp (Date)
+                    // (@) Timestamp (Date)
                 case '@':
                     try {
                         // TODO: Find a smarter way to do this.
                         // timestampBytes = bytes[fieldOffset:fieldOffset+7]
                         byte[] timestampBytes = {
-                                // Time in millis, after reverse.
-                                bytes[fieldOffset + 7], bytes[fieldOffset + 6], bytes[fieldOffset + 5],
-                                bytes[fieldOffset + 4],
-                                // Days, after reverse.
-                                bytes[fieldOffset + 3], bytes[fieldOffset + 2], bytes[fieldOffset + 1],
-                                bytes[fieldOffset]
+                            // Time in millis, after reverse.
+                            bytes[fieldOffset + 7],
+                            bytes[fieldOffset + 6],
+                            bytes[fieldOffset + 5],
+                            bytes[fieldOffset + 4],
+                            // Days, after reverse.
+                            bytes[fieldOffset + 3],
+                            bytes[fieldOffset + 2],
+                            bytes[fieldOffset + 1],
+                            bytes[fieldOffset]
                         };
 
                         ByteArrayInputStream i_bytes = new ByteArrayInputStream(timestampBytes);
@@ -544,7 +550,7 @@ public class DbaseFileInputStreamReader implements FileReader, Closeable {
                         // todo: use progresslistener, this isn't a grave error.
                     }
                     break;
-                // (N)umeric (Integer, Long or Fallthrough to Double)
+                    // (N)umeric (Integer, Long or Fallthrough to Double)
                 case 'n':
                 case 'N':
                     // numbers that begin with '*' are considered null
@@ -610,8 +616,8 @@ public class DbaseFileInputStreamReader implements FileReader, Closeable {
     @SuppressWarnings("PMD.SystemPrintln")
     public static void main(final String[] args) throws Exception {
         try (final DbaseFileReader reader =
-                     new DbaseFileReader(
-                             new ShpFiles(args[0]), false, StandardCharsets.ISO_8859_1, null)) {
+                new DbaseFileReader(
+                        new ShpFiles(args[0]), false, StandardCharsets.ISO_8859_1, null)) {
             System.out.println(reader.getHeader());
             int r = 0;
             while (reader.hasNext()) {
